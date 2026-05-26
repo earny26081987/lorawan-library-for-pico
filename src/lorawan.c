@@ -32,7 +32,8 @@
 
 #include "board.h"
 #include "rtc-board.h"
-#include "sx1276-board.h"
+#include "sx126x-board.h"
+#include "sx126x.h"
 
 #include "../../periodic-uplink-lpp/firmwareVersion.h"
 #include "Commissioning.h"
@@ -199,63 +200,90 @@ const char* lorawan_default_dev_eui(char* dev_eui)
     return dev_eui;
 }
 
-int lorawan_init(const struct lorawan_sx1276_settings* sx1276_settings, LoRaMacRegion_t region)
+int lorawan_init(const struct lorawan_sx1262_settings* sx1262_settings, LoRaMacRegion_t region)
 {
+    for(int _b=0;_b<1;_b++){gpio_put(25,1);sleep_ms(200);gpio_put(25,0);sleep_ms(200);}sleep_ms(800);
     EepromMcuInit();
 
+    for(int _b=0;_b<2;_b++){gpio_put(25,1);sleep_ms(200);gpio_put(25,0);sleep_ms(200);}sleep_ms(800);
     RtcInit();
     SpiInit(
-        &SX1276.Spi,
-        (SpiId_t)((sx1276_settings->spi.inst == spi0) ? 0 : 1),
-        sx1276_settings->spi.mosi /*MOSI*/,
-        sx1276_settings->spi.miso /*MISO*/,
-        sx1276_settings->spi.sck /*SCK*/, 
+        &SX126x.Spi,
+        (SpiId_t)((sx1262_settings->spi.inst == spi0) ? 0 : 1),
+        sx1262_settings->spi.mosi /*MOSI*/,
+        sx1262_settings->spi.miso /*MISO*/,
+        sx1262_settings->spi.sck /*SCK*/, 
         NC
     );
 
-    SX1276.Spi.Nss.pin = sx1276_settings->spi.nss;
-    SX1276.Reset.pin = sx1276_settings->reset;
-    SX1276.DIO0.pin = sx1276_settings->dio0;
-    SX1276.DIO1.pin = sx1276_settings->dio1;
+    SX126x.Spi.Nss.pin = sx1262_settings->spi.nss;
+    SX126x.BUSY.pin = sx1262_settings->busy;
+    SX126x.DIO1.pin = sx1262_settings->dio1;
+    SX126x.Reset.pin = sx1262_settings->reset;
+    
 
-    SX1276IoInit();
+    // Blink NSS pin number times to verify
+    sleep_ms(1000);
+    for(int _b=0;_b<3;_b++){gpio_put(25,1);sleep_ms(200);gpio_put(25,0);sleep_ms(200);}sleep_ms(800);
+    SX126xIoInit();
 
-    // check version register
-    if (SX1276Read(REG_LR_VERSION) != 0x12) {
-        return -1;
-    }
+    
 
     LmHandlerParams.Region = region;
 
+    for(int _b=0;_b<4;_b++){gpio_put(25,1);sleep_ms(200);gpio_put(25,0);sleep_ms(200);}sleep_ms(800);
+    sleep_ms(100);
+    SX126xReset();
+    // Test SX1262 SPI comms - read status byte
+    {
+        extern void gpio_put(uint gpio, bool value);
+        uint8_t cmd = 0xC0; // RADIO_GET_STATUS
+        uint8_t status = 0;
+        GpioWrite( &SX126x.Spi.Nss, 0 );
+        SpiInOut( &SX126x.Spi, cmd );
+        status = SpiInOut( &SX126x.Spi, 0x00 );
+        GpioWrite( &SX126x.Spi.Nss, 1 );
+        // Blink status value in nibbles - upper nibble then lower nibble
+        int upper = (status >> 4) & 0xF;
+        int lower = status & 0xF;
+        if(upper == 0) { gpio_put(25,1); sleep_ms(1000); gpio_put(25,0); sleep_ms(500); }
+        else { for(int i=0;i<upper;i++){gpio_put(25,1);sleep_ms(200);gpio_put(25,0);sleep_ms(200);} }
+        sleep_ms(1000);
+        if(lower == 0) { gpio_put(25,1); sleep_ms(1000); gpio_put(25,0); sleep_ms(500); }
+        else { for(int i=0;i<lower;i++){gpio_put(25,1);sleep_ms(200);gpio_put(25,0);sleep_ms(200);} }
+        sleep_ms(1000);
+    }
     if ( LmHandlerInit( &LmHandlerCallbacks, &LmHandlerParams ) != LORAMAC_HANDLER_SUCCESS )
     {
         return -1;
     }
 
     // Set system maximum tolerated rx error in milliseconds
+    for(int _b=0;_b<5;_b++){gpio_put(25,1);sleep_ms(200);gpio_put(25,0);sleep_ms(200);}sleep_ms(800);
     LmHandlerSetSystemMaxRxError( 20 );
 
     // The LoRa-Alliance Compliance protocol package should always be
     // initialized and activated.
+    for(int _b=0;_b<6;_b++){gpio_put(25,1);sleep_ms(200);gpio_put(25,0);sleep_ms(200);}sleep_ms(800);
     LmHandlerPackageRegister( PACKAGE_ID_COMPLIANCE, &LmhpComplianceParams );
 
     return 0;
 }
 
-int lorawan_init_abp(const struct lorawan_sx1276_settings* sx1276_settings, LoRaMacRegion_t region, const struct lorawan_abp_settings* abp_settings)
+int lorawan_init_abp(const struct lorawan_sx1262_settings* sx1262_settings, LoRaMacRegion_t region, const struct lorawan_abp_settings* abp_settings)
 {
     AbpSettings = abp_settings;
     OtaaSettings = NULL;
 
-    return lorawan_init(sx1276_settings, region);
+    return lorawan_init(sx1262_settings, region);
 }
 
-int lorawan_init_otaa(const struct lorawan_sx1276_settings* sx1276_settings, LoRaMacRegion_t region, const struct lorawan_otaa_settings* otaa_settings)
+int lorawan_init_otaa(const struct lorawan_sx1262_settings* sx1262_settings, LoRaMacRegion_t region, const struct lorawan_otaa_settings* otaa_settings)
 {
     AbpSettings = NULL;
     OtaaSettings = otaa_settings;
 
-    return lorawan_init(sx1276_settings, region);
+    return lorawan_init(sx1262_settings, region);
 }
 
 int lorawan_join()
